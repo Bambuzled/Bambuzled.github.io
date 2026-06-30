@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <title>
+  Deep Dive: Bambu&#39;s Authorization Control Scheme · Bambuzled
+</title>
+  <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light dark">
+
+
+
+
+<meta name="author" content="Bambuzled">
+<meta name="description" content="This post describes what Bambu has implemented in their Authorization Control scheme, with an emphasis on the cryptographic system involved. Cryptography is what ultimately defines what you can and cannot do with hardware and software you have access to, and there is a lot of wiggle room here to achieve 3rd-party interoperability if you can break through Bambu&rsquo;s attempts to obscure their software.
+
+  Forward
+  
+    
+    Link to heading
+  
+
+I&rsquo;m intentionally avoiding a detailed description of HOW I observed most of this since Bambu seems to be in the mood to threaten legally-dubious lawsuits recently for just USING their software in a way they don&rsquo;t like. Besides, if I did then they might decide to go change things to make analysis harder in future versions.">
+<meta name="keywords" content="blog,developer,personal">
+
+
+
+	<meta name="twitter:card" content="summary">
+	<meta name="twitter:title" content="Deep Dive: Bambu&#39;s Authorization Control Scheme">
+	<meta name="twitter:description" content="This post describes what Bambu has implemented in their Authorization Control scheme, with an emphasis on the cryptographic system involved. Cryptography is what ultimately defines what you can and cannot do with hardware and software you have access to, and there is a lot of wiggle room here to achieve 3rd-party interoperability if you can break through Bambu’s attempts to obscure their software.
+Forward Link to heading I’m intentionally avoiding a detailed description of HOW I observed most of this since Bambu seems to be in the mood to threaten legally-dubious lawsuits recently for just USING their software in a way they don’t like. Besides, if I did then they might decide to go change things to make analysis harder in future versions.">
+
+<meta property="og:url" content="https://bambuzled.github.io/posts/bambu-auth-control/">
+	<meta property="og:site_name" content="Bambuzled">
+	<meta property="og:title" content="Deep Dive: Bambu&#39;s Authorization Control Scheme">
+	<meta property="og:description" content="This post describes what Bambu has implemented in their Authorization Control scheme, with an emphasis on the cryptographic system involved. Cryptography is what ultimately defines what you can and cannot do with hardware and software you have access to, and there is a lot of wiggle room here to achieve 3rd-party interoperability if you can break through Bambu’s attempts to obscure their software.
+Forward Link to heading I’m intentionally avoiding a detailed description of HOW I observed most of this since Bambu seems to be in the mood to threaten legally-dubious lawsuits recently for just USING their software in a way they don’t like. Besides, if I did then they might decide to go change things to make analysis harder in future versions.">
+	<meta property="og:locale" content="en">
+	<meta property="og:type" content="article">
+		<meta property="article:section" content="posts">
+		<meta property="article:published_time" content="2025-06-30T18:30:00+00:00">
+		<meta property="article:modified_time" content="2025-06-30T18:30:00+00:00">
+
+
+
+
+<link rel="canonical" href="https://bambuzled.github.io/posts/bambu-auth-control/">
+
+
+<link rel="preload" href="/fonts/fa-brands-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/fa-regular-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/fa-solid-900.woff2" as="font" type="font/woff2" crossorigin>
+
+
+  
+  
+  <link rel="stylesheet" href="/css/coder.min.070d3ea2646067b00c83588fed23d7e29f141ff7ed80efd3c3074fbf4206f321.css" integrity="sha256-Bw0&#43;omRgZ7AMg1iP7SPX4p8UH/ftgO/TwwdPv0IG8yE=" crossorigin="anonymous" media="screen" />
+
+
+
+
+
+
+  
+    
+    
+    <link rel="stylesheet" href="/css/coder-dark.min.ad48f476275974885bdc03d5251e3cdbe1678c54a63ff772376b0ed2adc468dd.css" integrity="sha256-rUj0didZdIhb3APVJR482&#43;FnjFSmP/dyN2sO0q3EaN0=" crossorigin="anonymous" media="screen" />
+  
+
+
+
+ 
+
+
+
+
+<link rel="icon" type="image/svg+xml" href="/img/favicon.svg" sizes="any">
+<link rel="icon" type="image/png" href="/img/favicon-32x32.png" sizes="32x32">
+<link rel="icon" type="image/png" href="/img/favicon-16x16.png" sizes="16x16">
+
+<link rel="apple-touch-icon" href="/images/apple-touch-icon.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon.png">
+
+<link rel="manifest" href="/site.webmanifest">
+<link rel="mask-icon" href="/images/safari-pinned-tab.svg" color="#5bbad5">
+
+
+
+
+
+
+
+
+
+
+</head>
+
+
+
+
+
+
+<body class="preload-transitions colorscheme-dark">
+  
+<div class="float-container">
+    <a id="dark-mode-toggle" class="colorscheme-toggle">
+        <i class="fa-solid fa-adjust fa-fw" aria-hidden="true"></i>
+    </a>
+</div>
+
+
+  <main class="wrapper">
+    <nav class="navigation">
+  <section class="container">
+    
+    <a class="navigation-title" href="https://bambuzled.github.io/">
+      Bambuzled
+    </a>
+    
+    
+      <input type="checkbox" id="menu-toggle" />
+      <label class="menu-button float-right" for="menu-toggle">
+        <i class="fa-solid fa-bars fa-fw" aria-hidden="true"></i>
+      </label>
+      <ul class="navigation-list">
+        
+          
+            <li class="navigation-item">
+              <a class="navigation-link " href="/posts/">Posts</a>
+            </li>
+          
+        
+        
+      </ul>
+    
+  </section>
+</nav>
+
+
+    <div class="content">
+      
+  <section class="container post">
+    <article>
+      <header>
+        <div class="post-title">
+          <h1 class="title">
+            <a class="title-link" href="https://bambuzled.github.io/posts/bambu-auth-control/">
+              Deep Dive: Bambu&#39;s Authorization Control Scheme
+            </a>
+          </h1>
+        </div>
+        <div class="post-meta">
+          <div class="date">
+            <span class="posted-on">
+              <i class="fa-solid fa-calendar" aria-hidden="true"></i>
+              <time datetime="2025-06-30T18:30:00Z">
+                June 30, 2025
+              </time>
+            </span>
+            <span class="reading-time">
+              <i class="fa-solid fa-clock" aria-hidden="true"></i>
+              29-minute read
+            </span>
+          </div>
+          
+          
+          
+        </div>
+      </header>
+
+      
+
+
+      <div class="post-content">
+        
+        <nav id="TableOfContents">
+  <ul>
+    <li><a href="#forward">Forward</a></li>
+    <li><a href="#general-references">General References</a></li>
+    <li><a href="#under-the-banner-of-security">Under the Banner of Security</a></li>
+    <li><a href="#lock-out-to-lock-in">Lock-Out to Lock-In</a></li>
+    <li><a href="#bootstrapping-the-chain-of-trust">Bootstrapping the Chain of Trust</a></li>
+    <li><a href="#the-network-plugin">The Network Plugin</a></li>
+    <li><a href="#the-previous-leak">The Previous Leak</a>
+      <ul>
+        <li><a href="#the-fresh-key-process">The Fresh Key Process</a></li>
+      </ul>
+    </li>
+    <li><a href="#the-current-cert-api">The Current Cert API</a>
+      <ul>
+        <li><a href="#the-request">The Request</a></li>
+        <li><a href="#the-response">The Response</a></li>
+        <li><a href="#analyzing-the-ciphertexts">Analyzing the Ciphertexts</a></li>
+        <li><a href="#asking-nicely">Asking Nicely</a></li>
+      </ul>
+    </li>
+    <li><a href="#finding-the-cracks">Finding the Cracks</a>
+      <ul>
+        <li><a href="#decryption-time">Decryption Time</a></li>
+        <li><a href="#signature-time">Signature Time</a></li>
+        <li><a href="#aes256-parameter">aes256 Parameter</a></li>
+        <li><a href="#app-id-value">app-id Value</a></li>
+        <li><a href="#aes-session-key">AES Session Key</a></li>
+        <li><a href="#server-public-key">Server Public Key</a></li>
+        <li><a href="#static-analysis">Static Analysis</a></li>
+      </ul>
+    </li>
+    <li><a href="#signing-messages">Signing Messages</a></li>
+    <li><a href="#the-crl-catch">The CRL Catch</a></li>
+    <li><a href="#practical-security-implications">Practical Security Implications</a>
+      <ul>
+        <li><a href="#the-access-code-gate">The Access Code Gate</a></li>
+        <li><a href="#the-real-hacker-threat">The Real Hacker Threat</a></li>
+      </ul>
+    </li>
+    <li><a href="#profit-over-principles">Profit Over Principles</a></li>
+    <li><a href="#solutions">Solutions</a>
+      <ul>
+        <li><a href="#restore-local-control">Restore Local Control</a></li>
+        <li><a href="#user-managed-certs">User-Managed Certs</a></li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+        <p>This post describes what Bambu has implemented in their Authorization Control scheme, with an emphasis on the cryptographic system involved. Cryptography is what ultimately defines what you can and cannot do with hardware and software you have access to, and there is a lot of wiggle room here to achieve 3rd-party interoperability if you can break through Bambu&rsquo;s attempts to obscure their software.</p>
+<h2 id="forward">
+  Forward
+  <a class="heading-link" href="#forward">
+    <i class="fa-solid fa-link" aria-hidden="true" title="Link to heading"></i>
+    <span class="sr-only">Link to heading</span>
+  </a>
+</h2>
+<p>I&rsquo;m intentionally avoiding a detailed description of HOW I observed most of this since Bambu seems to be in the mood to threaten <a href="https://www.reddit.com/r/3Dprinting/comments/1t3psxr/louis_rossman_talks_about_bambu_labs_sending/"  class="external-link" target="_blank" rel="noopener">legally-dubious lawsuits</a> recently for just USING their software in a way they don&rsquo;t like. Besides, if I did then they might decide to go change things to make analysis harder in future versions.</p>
+<p>The content of this post is primarily about the Linux <code>libbambu_networking.so</code> v02.06.00.50 of the network plugin that is being <a href="https://public-cdn.bblmw.com/upgrade/studio/plugins/02.06.00.50/7459f94f40/linux_02.06.00.50.zip"  class="external-link" target="_blank" rel="noopener">distributed</a> at the time of writing (SHA256: <code>6dd1491ef3038e5ed76a330e0ccbe9ae083635b7b9f2a1ba824a14c771b53fb6</code>), though much of it is probably the same on other systems.</p>
+<p><em>This post contains my own ideas and opinions, and nothing herein should be considered reflective of the official positions or opinions of any company or group that I am affiliated with- past, present, or future.</em></p>
+<h2 id="general-references">
+  General References
+  <a class="heading-link" href="#general-references">
+    <i class="fa-solid fa-link" aria-hidden="true" title="Link to heading"></i>
+    <span class="sr-only">Link to heading</span>
+  </a>
+</h2>
+<p>My research began with these references, which serve as a pretty good base for starting to understand how the control scheme works if you&rsquo;re interested in doing similar research:</p>
+<ul>
+<li>Bambu&rsquo;s official security white paper: <a href="https://cdn1.bambulab.com/trust-center/file/bambulab-security-whitepaper-en.pdf"  class="external-link" target="_blank" rel="noopener">https://cdn1.bambulab.com/trust-center/file/bambulab-security-whitepaper-en.pdf</a> (primarily sections 2.3.4 and 3.1)</li>
+<li><a href="https://github.com/coelacant1/Bambu-Lab-Cloud-API"  class="external-link" target="_blank" rel="noopener">https://github.com/coelacant1/Bambu-Lab-Cloud-API</a> (contains a fair amount of wrong/outdated/incomplete info at the time of publishing this post)</li>
+<li><a href="https://github.com/ClusterM/open-bamboo-networking/blob/master/NETWORK_PLUGIN.md"  class="external-link" target="_blank" rel="noopener">https://github.com/ClusterM/open-bamboo-networking/blob/master/NETWORK_PLUGIN.md</a></li>
+</ul>
+<hr>
+<h2 id="under-the-banner-of-security">
+  Under the Banner of Security
+  <a class="heading-link" href="#under-the-banner-of-security">
+    <i class="fa-solid fa-link" aria-hidden="true" title="Link to heading"></i>
+    <span class="sr-only">Link to heading</span>
+  </a>
+</h2>
+<p><em>(This section is historical context and an analysis of Bambu&rsquo;s justification for the changes; skip it if you just want to get to the technical content)</em></p>
+<p>In 2025 Bambu Labs <a href="https://blog.bambulab.com/firmware-update-introducing-new-authorization-control-system-2/"  class="external-link" target="_blank" rel="noopener">announced</a> changes to how their 3D printers would be allowed to interact with 3rd-party products and software, which had historically been a staple benefit of buying their printers. Their initial announcement seemed to almost entirely preclude 3rd-party local access, and after immense community backlash they &ldquo;clarified&rdquo; (or backpedaled, if you&rsquo;re cynical) that the existing local access methods would still be available via a separate Developer Mode. But critically, Developer Mode would disable all official cloud features and integration. In early 2025 this change began rolling out in new beta firmware updates and Bambu Studio releases. Probably the most annoying effect of this change that most users have experienced is that you can no longer use OrcaSlicer to send prints directly to your printer (even<strong>locally</strong>) if your printer is also cloud-connected.</p>
+<p>Bambu claimed that these changes were necessary for security. In the current version of the <a href="https://blog.bambulab.com/firmware-update-introducing-new-authorization-control-system-2/"  class="external-link" target="_blank" rel="noopener">FAQ</a> in that 2025 blog, Bambu gives this explanation (emphasis added):</p>
+<blockquote>
+<p>This security update is necessary to enhance the overall security of your printer. By ensuring that all <strong>interactions with the hardware</strong>—such as moving axes, heating components, or performing other critical actions—are verified and secure, we can minimize risks and prevent potentially <strong>dangerous situations</strong>. Additionally, over the past year, <strong>we&rsquo;ve detected an increase in the number of requests made to our cloud services through unofficial channels.</strong> These incidents have included significant abnormal traffic patterns and, in some cases, targeted DDoS attacks that have impacted service availability. Our monitoring systems have detected peaks of up to 30 million <strong>unauthorized requests</strong> per day, creating unnecessary strain on our infrastructure.</p>
+</blockquote>
+<p>As I read it, they call out two reasons for these changes: preventing dangerous commands from being sent to the printer, and because their cloud servers are receiving too many &ldquo;unauthorized&rdquo; and/or &ldquo;unofficial&rdquo; requests.</p>
+<p>The fact that they differentiate between &ldquo;unauthorized&rdquo; requests and &ldquo;unofficial&rdquo; channels is telling; I assume that &ldquo;unofficial&rdquo; in this context means &ldquo;coming from unofficial 3rd-party software.&rdquo; But they can&rsquo;t just lump that traffic into the actually-problematic &ldquo;unauthorized&rdquo; traffic because their servers <strong>do</strong> require users&rsquo; authorization tokens to be present to process 3rd-party requests related to printer control. They just didn&rsquo;t like that they were supporting legitimate user traffic that was originating from software outside their own ecosystem.</p>
+<p>However, the cloud traffic argument alone doesn&rsquo;t justify cutting off local 3rd-pary access to cloud-connected printers. So they also threw in a vague concern that &ldquo;unverified&rdquo; interactions are dangerous and need to be prevented. THIS is the justification for blocking 3rd-party local access, conveniently lumped in with the unrelated cloud-specific concerns.</p>
+<p>In my opinion, of the concerns listed only intentional <a href="https://wiki.bambulab.com/en/security-incidents-cloud-traffic"  class="external-link" target="_blank" rel="noopener">DDoS</a> is a legitimate concern that offers some justification for restricting cloud access - but it only applies to cloud services, not local interactions. It has virtually no bearing on 3rd-party local access to cloud-connected printers, unless they are doing something stupid like mirroring all local traffic back to their cloud servers.</p>
+<p>&ldquo;Preventing dangerous commands&rdquo; is a legitimate concern, but the solution is already in place: require the access code displayed on the printer screen to send commands to the printer. You can further harden that if needed (make the code longer or more complex, for example) but that&rsquo;s a perfectly serviceable security measure that doesn&rsquo;t need changing, if implemented correctly. Properly validating commands sent through the cloud (i.e., user input) is another basic best practice that they apparently <a href="https://wiki.bambulab.com/en/security-incidents-cloud-traffic"  class="external-link" target="_blank" rel="noopener">beefed up</a> when they noticed they had some holes there. These are real security solutions.</p>
+<h2 id="lock-out-to-lock-in">
+  Lock-Out to Lock-In
+  <a class="heading-link" href="#lock-out-to-lock-in">
+    <i class="fa-solid fa-link" aria-hidden="true" title="Link to heading"></i>
+    <span class="sr-only">Link to heading</span>
+  </a>
+</h2>
+<p>In early early 2025 they began rolling out the new &ldquo;Authorization Control&rdquo; features for cloud-connected printers via optional firmware updates. Users of pre-existing devices were (and currently still are) free to continue to use older firmware versions to maintain the same cloud-and-local access that always existed. But they miss out on new features, and this is not an option for newer printers released after the change. I strongly suspect that Bambu will drop cloud support for these old firmwares at some point in the future to force users into the new paradigm.</p>
+<p>In a nutshell, this change separated printer commands into two categories: I&rsquo;ll call them &ldquo;safe&rdquo; and &ldquo;privileged&rdquo; (the <a href="https://cdn1.bambulab.com/trust-center/file/bambulab-security-whitepaper-en.pdf"  class="external-link" target="_blank" rel="noopener">whitepaper</a> calls the latter &ldquo;critical operations&rdquo;). Most or all commands that only read data back from the printer are considered &ldquo;safe&rdquo; and still accessible to 3rd party software, same as they were prior. But commands that control the printer or change settings are privileged, and no longer accessible to 3rd-party software. This change tightens Bambu&rsquo;s control over users, locking out 3rd-party integration in order to lock users more into Bambu&rsquo;s tools and cloud infrastructure.</p>
+<p>For the rest of this post, unless otherwise specified, &ldquo;command&rdquo; refers to privileged commands. Similarly, I&rsquo;m only discussing printer that are cloud-connected, not in LAN-Only or Developer Mode.</p>
+<h2 id="bootstrapping-the-chain-of-trust">
+  Bootstrapping the Chain of Trust
+  <a class="heading-link" href="#bootstrapping-the-chain-of-trust">
+    <i class="fa-solid fa-link" aria-hidden="true" title="Link to heading"></i>
+    <span class="sr-only">Link to heading</span>
+  </a>
+</h2>
+<p>How is this lockout achieved? Bambu printers now require that privileged commands be signed with a Bambu key. Identifying which keys belong to Bambu is done with certificates. When a printer powers on, it initially trusts no keys for signing. To add one, a Bambu application must supply a <a href="https://en.wikipedia.org/wiki/Chain_of_trust"  class="external-link" target="_blank" rel="noopener">chain of certificates</a> that are signed by Bambu in a specific manner. I&rsquo;ll call that process &ldquo;bootstrapping.&rdquo; The technical specifics of that process are detailed later in the <a href="#signing-messages" >Signing Messages</a> section, while a high-level overview is provided here.</p>
+<p>The printer (presumably) has a copy of the top-level certificate (a root CA) embedded in its firmware. When it receives a certificate chain from an application, it validates the first cert against the embedded root CA. Then it validates the second cert against the first, and the third against the second.  Each cert signs the cert below it, until the final &ldquo;leaf&rdquo; cert (linked to the command signing key) is reached. If every cert in that chain is properly signed all the way back to the embedded CA cert, the command signing key associated with the leaf cert becomes trusted.</p>
+<p>Different Bambu applications (like Bambu Studio networking plugins on Windows, Linux, and MacOs, Bambu Connect, and Bambu Handy) all use a different key, and each gets its own cert signed by Bambu. Printers can have multiple active trusted certs, so that they will trust commands sent/signed by different Bambu applications.</p>
+<p>You can freely ask your printer for a list of leaf certs it currently trusts for command signing. Here&rsquo;s some python code to do that, just fill in your printer details in the top three variables:</p>
+<div class="highlight"><pre tabindex="0" style="color:#abb2bf;background-color:#282c34;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#7f848e">#!/usr/bin/env python3</span>
+</span></span><span style="display:flex;"><span><span style="color:#c678dd">import</span> <span style="color:#e06c75">json</span><span style="color:#56b6c2">,</span> <span style="color:#e06c75">ssl</span><span style="color:#56b6c2">,</span> <span style="color:#e06c75">time</span>
+</span></span><span style="display:flex;"><span><span style="color:#c678dd">try</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#c678dd">import</span> <span style="color:#e06c75">paho.mqtt.client</span> <span style="color:#c678dd">as</span> <span style="color:#e06c75">mqtt</span>
+</span></span><span style="display:flex;"><span><span style="color:#c678dd">except</span> <span style="color:#e06c75">ImportError</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#c678dd">raise</span> <span style="color:#e06c75">SystemExit</span>(<span style="color:#98c379">&#34;paho-mqtt is required: pip install paho-mqtt&#34;</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#e06c75">PRINTER_IP</span> <span style="color:#56b6c2">=</span> <span style="color:#98c379">&#34;192.168.1.100&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#e06c75">ACCESS_CODE</span> <span style="color:#56b6c2">=</span> <span style="color:#98c379">&#34;&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#e06c75">SERIAL</span> <span style="color:#56b6c2">=</span> <span style="color:#98c379">&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#c678dd">def</span> <span style="color:#61afef;font-weight:bold">query_certs</span>(<span style="color:#e06c75">host</span>, <span style="color:#e06c75">code</span>, <span style="color:#e06c75">serial</span>, <span style="color:#e06c75">timeout</span><span style="color:#56b6c2">=</span><span style="color:#d19a66">8.0</span>):
+</span></span><span style="display:flex;"><span>    <span style="color:#e06c75">out</span> <span style="color:#56b6c2">=</span> {}
+</span></span><span style="display:flex;"><span>    <span style="color:#e06c75">ctx</span> <span style="color:#56b6c2">=</span> <span style="color:#e06c75">ssl</span><span style="color:#56b6c2">.</span><span style="color:#e06c75">create_default_context</span>()
+</span></span><span style="display:flex;"><span>    <span style="color:#e06c75">ctx</span><span style="color:#56b6c2">.</span><span style="color:#e06c75">check_hostname</span> <span style="color:#56b6c2">=</span> <span style="color:#e5c07b">False</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e06c75">ctx</span><span style="color:#56b6c2">.</span><span style="color:#e06c75">verify_mode</span> <span style="color:#56b6c2">=</span> <span style="color:#e06c75">ssl</span><span style="color:#56b6c2">.</span><span style="color:#e06c75">CERT_NONE</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e06c75">c</span> <span style="color:#56b6c2">=</span> <span style="color:#e06c75">mqtt</span><span style="color:#56b6c2">.</span><span style="color:#e06c75">Client</span>(<span style="color:#e06c75">mqtt</span><span style="color:#56b6c2">.</span><span style="color:#e06c75">CallbackAPIVersion</span><span style="color:#56b6c2">.</span><span style="color:#e06c75">VERSION2</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#e06c75">c</span><span style="color:#56b6c2">.</span><span style="color:#e06c75">username_pw_set</span>(<span style="color:#98c379">&#34;bblp&#34;</span>, <span style="color:#e06c75">code</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#e06c75">c</span><span style="color:#56b6c2">.</span><span style="color:#e06c75">tls_set_context</span>(<span style="color:#e06c75">ctx</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#c678dd">def</span> <span style="color:#61afef;font-weight:bold">on_connect</span>(<span style="color:#e06c75">c</span>, <span style="color:#56b6c2">*</span><span style="color:#e06c75">_</span>):
+</span></span><span style="display:flex;"><span>        <span style="color:#e06c75">c</span><span style="color:#56b6c2">.</span><span style="color:#e06c75">subscribe</span>(<span style="color:#98c379">f</span><span style="color:#98c379">&#34;device/</span><span style="color:#98c379">{</span><span style="color:#e06c75">serial</span><span style="color:#98c379">}</span><span style="color:#98c379">/report&#34;</span>)
+</span></span><span style="display:flex;"><span>        <span style="color:#e06c75">c</span><span style="color:#56b6c2">.</span><span style="color:#e06c75">publish</span>(<span style="color:#98c379">f</span><span style="color:#98c379">&#34;device/</span><span style="color:#98c379">{</span><span style="color:#e06c75">serial</span><span style="color:#98c379">}</span><span style="color:#98c379">/request&#34;</span>, <span style="color:#e06c75">json</span><span style="color:#56b6c2">.</span><span style="color:#e06c75">dumps</span>({<span style="color:#98c379">&#34;security&#34;</span>: {
+</span></span><span style="display:flex;"><span>            <span style="color:#98c379">&#34;command&#34;</span>: <span style="color:#98c379">&#34;app_cert_list&#34;</span>, <span style="color:#98c379">&#34;sequence_id&#34;</span>: <span style="color:#98c379">&#34;qcl&#34;</span>,
+</span></span><span style="display:flex;"><span>            <span style="color:#98c379">&#34;timestamp&#34;</span>: <span style="color:#e5c07b">int</span>(<span style="color:#e06c75">time</span><span style="color:#56b6c2">.</span><span style="color:#e06c75">time</span>()), <span style="color:#98c379">&#34;type&#34;</span>: <span style="color:#98c379">&#34;app&#34;</span>}}))
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#c678dd">def</span> <span style="color:#61afef;font-weight:bold">on_message</span>(<span style="color:#e06c75">_c</span>, <span style="color:#e06c75">_ud</span>, <span style="color:#e06c75">msg</span>):
+</span></span><span style="display:flex;"><span>        <span style="color:#e06c75">sec</span> <span style="color:#56b6c2">=</span> <span style="color:#e06c75">json</span><span style="color:#56b6c2">.</span><span style="color:#e06c75">loads</span>(<span style="color:#e06c75">msg</span><span style="color:#56b6c2">.</span><span style="color:#e06c75">payload</span>)<span style="color:#56b6c2">.</span><span style="color:#e06c75">get</span>(<span style="color:#98c379">&#34;security&#34;</span>, {})
+</span></span><span style="display:flex;"><span>        <span style="color:#c678dd">if</span> <span style="color:#e06c75">sec</span><span style="color:#56b6c2">.</span><span style="color:#e06c75">get</span>(<span style="color:#98c379">&#34;command&#34;</span>) <span style="color:#56b6c2">==</span> <span style="color:#98c379">&#34;app_cert_list&#34;</span>:
+</span></span><span style="display:flex;"><span>            <span style="color:#e06c75">out</span><span style="color:#56b6c2">.</span><span style="color:#e06c75">update</span>(<span style="color:#e06c75">result</span><span style="color:#56b6c2">=</span><span style="color:#e06c75">sec</span><span style="color:#56b6c2">.</span><span style="color:#e06c75">get</span>(<span style="color:#98c379">&#34;result&#34;</span>), <span style="color:#e06c75">cert_ids</span><span style="color:#56b6c2">=</span><span style="color:#e06c75">sec</span><span style="color:#56b6c2">.</span><span style="color:#e06c75">get</span>(<span style="color:#98c379">&#34;cert_ids&#34;</span>, []))
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e06c75">c</span><span style="color:#56b6c2">.</span><span style="color:#e06c75">on_connect</span> <span style="color:#56b6c2">=</span> <span style="color:#e06c75">on_connect</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e06c75">c</span><span style="color:#56b6c2">.</span><span style="color:#e06c75">on_message</span> <span style="color:#56b6c2">=</span> <span style="color:#e06c75">on_message</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e06c75">c</span><span style="color:#56b6c2">.</span><span style="color:#e06c75">connect</span>(<span style="color:#e06c75">host</span>, <span style="color:#d19a66">8883</span>, <span style="color:#e06c75">keepalive</span><span style="color:#56b6c2">=</span><span style="color:#d19a66">30</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#e06c75">c</span><span style="color:#56b6c2">.</span><span style="color:#e06c75">loop_start</span>()
+</span></span><span style="display:flex;"><span>    <span style="color:#e06c75">deadline</span> <span style="color:#56b6c2">=</span> <span style="color:#e06c75">time</span><span style="color:#56b6c2">.</span><span style="color:#e06c75">time</span>() <span style="color:#56b6c2">+</span> <span style="color:#e06c75">timeout</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#c678dd">while</span> <span style="color:#e06c75">time</span><span style="color:#56b6c2">.</span><span style="color:#e06c75">time</span>() <span style="color:#56b6c2">&lt;</span> <span style="color:#e06c75">deadline</span> <span style="color:#56b6c2">and</span> <span style="color:#56b6c2">not</span> <span style="color:#e06c75">out</span>:
+</span></span><span style="display:flex;"><span>        <span style="color:#e06c75">time</span><span style="color:#56b6c2">.</span><span style="color:#e06c75">sleep</span>(<span style="color:#d19a66">0.1</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#e06c75">c</span><span style="color:#56b6c2">.</span><span style="color:#e06c75">loop_stop</span>()
+</span></span><span style="display:flex;"><span>    <span style="color:#e06c75">c</span><span style="color:#56b6c2">.</span><span style="color:#e06c75">disconnect</span>()
+</span></span><span style="display:flex;"><span>    <span style="color:#c678dd">return</span> <span style="color:#e06c75">out</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#e06c75">r</span> <span style="color:#56b6c2">=</span> <span style="color:#e06c75">query_certs</span>(<span style="color:#e06c75">PRINTER_IP</span>, <span style="color:#e06c75">ACCESS_CODE</span>, <span style="color:#e06c75">SERIAL</span>)
+</span></span><span style="display:flex;"><span><span style="color:#e06c75">ids</span> <span style="color:#56b6c2">=</span> <span style="color:#e06c75">r</span><span style="color:#56b6c2">.</span><span style="color:#e06c75">get</span>(<span style="color:#98c379">&#34;cert_ids&#34;</span>, [])
+</span></span><span style="display:flex;"><span><span style="color:#e5c07b">print</span>(<span style="color:#98c379">f</span><span style="color:#98c379">&#34;result=</span><span style="color:#98c379">{</span><span style="color:#e06c75">r</span><span style="color:#56b6c2">.</span><span style="color:#e06c75">get</span>(<span style="color:#98c379">&#39;result&#39;</span>)<span style="color:#98c379">}</span><span style="color:#98c379">  certs_trusted=</span><span style="color:#98c379">{</span><span style="color:#e5c07b">len</span>(<span style="color:#e06c75">ids</span>)<span style="color:#98c379">}</span><span style="color:#98c379">&#34;</span>)
+</span></span><span style="display:flex;"><span><span style="color:#c678dd">for</span> <span style="color:#e06c75">cid</span> <span style="color:#56b6c2">in</span> <span style="color:#e06c75">ids</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#e5c07b">print</span>(<span style="color:#98c379">f</span><span style="color:#98c379">&#34;  </span><span style="color:#98c379">{</span><span style="color:#e06c75">cid</span><span style="color:#98c379">}</span><span style="color:#98c379">&#34;</span>)
+</span></span></code></pre></div><h2 id="the-network-plugin">
+  The Network Plugin
+  <a class="heading-link" href="#the-network-plugin">
+    <i class="fa-solid fa-link" aria-hidden="true" title="Link to heading"></i>
+    <span class="sr-only">Link to heading</span>
+  </a>
+</h2>
+<p>After bootstrapping is complete, Bambu Studio needs to sign privileged MQTT commands send to the printer using the associated private key. But Bambu REALLY doesn&rsquo;t want anyone else to be able to get ahold of a valid private key, because that could be used to enable 3rd-party software interoperability for printer control- exactly the thing they are really trying to lock out with these changes.</p>
+<p>So Bambu uses a <a href="https://github.com/bambulab/BambuStudio/issues/6037"  class="external-link" target="_blank" rel="noopener">closed-source networking plugin</a> to help with this process. This plugin&rsquo;s code is heavily <a href="https://github.com/bambulab/BambuStudio/issues/8605"  class="external-link" target="_blank" rel="noopener">obfuscated</a> and contains extensive <a href="https://github.com/bambulab/BambuStudio/issues/6726"  class="external-link" target="_blank" rel="noopener">anti-debug features</a> to try to prevent anyone from extracting the keys it uses. It basically tries to acts like a software version of a <a href="https://en.wikipedia.org/wiki/Hardware_security_module"  class="external-link" target="_blank" rel="noopener">HSM</a>, hiding key material from the open-source Bambu Studio process behind heavy software obfuscation.</p>
+<p>Analyzing the obfuscated plugin directly would be no easy task, since it actively works to prevent analysis. Bambu&rsquo;s <a href="https://cdn1.bambulab.com/trust-center/file/bambulab-security-whitepaper-en.pdf"  class="external-link" target="_blank" rel="noopener">whitepaper</a> explicitly mentions the use of virtual machines, obfuscation, and anti-debug features (sections 3.1.2-4), among others. The Windows version of the plugin <a href="https://github.com/Frix-x/baltobu-reverse-networking/blob/main/docs/01-binary.md"  class="external-link" target="_blank" rel="noopener">apparently uses commercial VMProtect</a> software, and I&rsquo;m sure the Linux/Mac ones use something similar. Despite all that, we can get an idea of how the current plugin works by analyzing the Bambu Connect code that got dumped shortly after the authorization changes were announced. We can then compare that to some intercepted network traffic and get a pretty good idea of what&rsquo;s going on.</p>
+<h2 id="the-previous-leak">
+  The Previous Leak
+  <a class="heading-link" href="#the-previous-leak">
+    <i class="fa-solid fa-link" aria-hidden="true" title="Link to heading"></i>
+    <span class="sr-only">Link to heading</span>
+  </a>
+</h2>
+<p>Shortly after Bambu announced these changes, the <a href="https://hackaday.com/2025/01/19/bambu-connects-authentication-x-509-certificate-and-private-key-extracted/"  class="external-link" target="_blank" rel="noopener">private key and associated code used by Bambu Connect got dumped</a>. From what I understand, Bambu reworked the code for Connect to make it much harder to dump after that, but the old dump still gives us useful insight into the process to obtain the private key, at least as it existed then.</p>
+<p>This code contains several hardcoded cryptographic fields of note:</p>
+<ul>
+<li><code>fre</code> is the cloud server&rsquo;s certificate</li>
+<li><code>j_</code> contains the private key and cert for the application, plus a certificate chain (for &ldquo;bootstrapping&rdquo;) that leads back to a &ldquo;BBL CA&rdquo; root certificate, and a <a href="https://en.wikipedia.org/wiki/Certificate_revocation_list"  class="external-link" target="_blank" rel="noopener">CRL</a>. The private key is what ultimately &ldquo;proves&rdquo; that network requests made by the application application are legit.</li>
+<li><code>Are</code> is an app identifier, comprised of the application cert&rsquo;s <code>Subject</code> field <code>CN</code> value (<code>GLOF3813734089-524a37c80000</code>), plus the seemingly-random 16-character <code>c6a6a274a47b3281</code> hex string.</li>
+</ul>
+<p>Here&rsquo;s a visual breakdown of the certs and their relationships:</p>
+<div class="highlight"><pre tabindex="0" style="color:#abb2bf;background-color:#282c34;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>                    CN=BBL CA  (C=CN, O=BBL Technologies Co., Ltd)
+</span></span><span style="display:flex;"><span>                    └─ offline root — NOT present in the code
+</span></span><span style="display:flex;"><span>                       │ signs
+</span></span><span style="display:flex;"><span>                       ▼
+</span></span><span style="display:flex;"><span>     ┌───────────────────────────────────────────────────┐
+</span></span><span style="display:flex;"><span>     │ application_root.bambulab.com (top cert in chain) │  CA:TRUE, pathlen:2
+</span></span><span style="display:flex;"><span>     │ serial …F50F0988                                  │  2024-05-29 → 2034-05-27
+</span></span><span style="display:flex;"><span>     │ SKI/AKI anchor for everything below               │
+</span></span><span style="display:flex;"><span>     └───────────────────────────────────────────────────┘
+</span></span><span style="display:flex;"><span>          │ signs                              │ signs
+</span></span><span style="display:flex;"><span>          ▼                                    ▼
+</span></span><span style="display:flex;"><span>    ┌─────────────────────────┐   ┌──────────────────────────────────────┐
+</span></span><span style="display:flex;"><span>    │ service.bambulab.com    │   │ GLOF3813734089.bambulab.com          │  CA:TRUE, pathlen:1
+</span></span><span style="display:flex;"><span>    │ (in &#39;fre&#39; variable)     │   │ (intermediate CA in chain)           │  AKI → root SKI
+</span></span><span style="display:flex;"><span>    │ serial …F50F0992        │   │ serial …F50F0994                     │  SKI C2:C9:D1:2D…
+</span></span><span style="display:flex;"><span>    │ CA:FALSE (leaf)         │   │ 2024-08-02 → 2034-07-31              │
+</span></span><span style="display:flex;"><span>    │ 2024-07-26 → 2034-07-24 │   └──────────────────────────────────────┘
+</span></span><span style="display:flex;"><span>    │ AKI → root SKI          │        │ signs                    │ signs
+</span></span><span style="display:flex;"><span>    └─────────────────────────┘        ▼                          ▼
+</span></span><span style="display:flex;"><span>                              ┌─────────────────────────┐   ┌────────────────────┐
+</span></span><span style="display:flex;"><span>                              │ GLOF…-524a37c80000      │   │  CRL               │
+</span></span><span style="display:flex;"><span>                              │ (j_.cert)               │   │  issuer = GLOF…    │
+</span></span><span style="display:flex;"><span>                              │ priv key = j_.privateKey│   │  AKI C2:C9:D1:2D…  │
+</span></span><span style="display:flex;"><span>                              │ serial EE3C…BA2C        │   │  revokes 2 serials │
+</span></span><span style="display:flex;"><span>                              │ CA:FALSE (client ID)    │   └────────────────────┘
+</span></span><span style="display:flex;"><span>                              │ 2024-12-11 → 2025-12-12 │
+</span></span><span style="display:flex;"><span>                              │ AKI → intermediate SKI  │
+</span></span><span style="display:flex;"><span>                              └─────────────────────────┘
+</span></span></code></pre></div><p>The <code>j_</code> variable alone is notable because it shows the private key is embedded in the application itself. However, in addition to that, the application also has code to obtain a fresh cert and private key from the server. Probably to handle cases when a key gets leaked and needs to be revoked, but a new plugin with the new key isn&rsquo;t ready for distribution yet, or not everyone has had time to upgraded to the new one yet. The presence of a non-empty hardcoded Cert Revocation List also supports this kind of scheme.</p>
+<h3 id="the-fresh-key-process">
+  The Fresh Key Process
+  <a class="heading-link" href="#the-fresh-key-process">
+    <i class="fa-solid fa-link" aria-hidden="true" title="Link to heading"></i>
+    <span class="sr-only">Link to heading</span>
+  </a>
+</h3>
+<p>On startup, the old code generates a random 32-bye AES session key. It uses that key to AES-GCM encrypt the string <code>GLOF3813734089-524a37c80000c6a6a274a47b3281</code> (contained in variable <code>Are</code>). This results in a typical <code>Nonce||Ciphertext||Tag</code> binary blob.</p>
+<p>The AES session key is then encrypted using the server&rsquo;s public key (the <code>fre</code> variable), ensuring that it cannot be extracted from network traffic even if TLS is decrypted.</p>
+<p>The binary blob and encrypted session key are injected into a request URL that is then sent to the server. The request also contains a couple <code>x-bbl-*</code> headers that identify the application&rsquo;s cert and prove that the requestor actually possesses the correct private key by signing a current timestamp with it.</p>
+<p><strong>(Inferred)</strong> If the headers check out, the server decrypts the AES session key using the private key associated with the <code>fre</code> cert, then decrypts the binary blob using that session key. If the binary blob decrypts to the expected cert identifier and semi-secret string combo, the server sends back a fresh cert and private key for the application.</p>
+<p>The returned private key is encrypted using the same random session key that was sent to the server. This ensures only the application can decrypt it, and that session key disappears forever when the program closes. The encrypted key blob has the same <code>Nonce||Ciphertext||Tag</code> AES-GCM format that the encrypted secret-string did.</p>
+<p>The fresh decrypted private key can then be used to sign MQTT messages. But why bother with this process when the private key is already embedded in the code? Probably to speed up key revocation. After a key is compromised, pushing out a new network plugin with an updated key can take a while (especially since Bambu has to go ask whatever company is providing the obfuscation software to generate a new one). With this scheme they can push an updated cert chain, private key, and (most importantly) CRL that revokes the leaked key to cloud-connected applications right away, while the updated networking libraries get sorted.</p>
+<p>Since bootstrapping is performed by the application (not pushed to the printer directly from the cloud) this also means that many LAN-Only printers will get the updated CRL, as long as the computer that the Bambu application is running on is able to connect to the Internet.</p>
+<h2 id="the-current-cert-api">
+  The Current Cert API
+  <a class="heading-link" href="#the-current-cert-api">
+    <i class="fa-solid fa-link" aria-hidden="true" title="Link to heading"></i>
+    <span class="sr-only">Link to heading</span>
+  </a>
+</h2>
+<p>Now let&rsquo;s explore how that old code compares to what we can see in the current network traffic generated by Bambu Studio with the network plugin.</p>
+<h3 id="the-request">
+  The Request
+  <a class="heading-link" href="#the-request">
+    <i class="fa-solid fa-link" aria-hidden="true" title="Link to heading"></i>
+    <span class="sr-only">Link to heading</span>
+  </a>
+</h3>
+<p>On startup, Bambu Studio generates a request like this, presumably asking the plugin to fill in the <code>app-id</code> and <code>C</code> variables just like the old Bambu Connect code did:</p>
+<div class="highlight"><pre tabindex="0" style="color:#abb2bf;background-color:#282c34;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>https://api.bambulab.com/v1/iot-service/api/user/applications/&lt;app-id&gt;/cert?aes256=&lt;C&gt;&amp;ver=1
+</span></span></code></pre></div><p>This request contains two variables: an app-id and a ciphertext C.</p>
+<ul>
+<li>App-id is a Base64URL-encoded string representing 71 bytes, which appear to be random and/or encrypted.</li>
+<li>C is a Base64URL-encoded string representing 256 random/encrypted bytes, or 2048 bits.</li>
+</ul>
+<p>Semantically, this request represents the application requesting a certificate and supplying an AES256 key, just like the old code did.</p>
+<h3 id="the-response">
+  The Response
+  <a class="heading-link" href="#the-response">
+    <i class="fa-solid fa-link" aria-hidden="true" title="Link to heading"></i>
+    <span class="sr-only">Link to heading</span>
+  </a>
+</h3>
+<p>The server sends back a JSON response that looks like this:</p>
+<div class="highlight"><pre tabindex="0" style="color:#abb2bf;background-color:#282c34;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-json" data-lang="json"><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    <span style="color:#e06c75">&#34;message&#34;</span>: <span style="color:#98c379">&#34;success&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#e06c75">&#34;code&#34;</span>: <span style="color:#d19a66">0</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#e06c75">&#34;error&#34;</span>: <span style="color:#e5c07b">null</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#e06c75">&#34;cert&#34;</span>: <span style="color:#98c379">&#34;[3 PEM certificates]&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#e06c75">&#34;crl&#34;</span>: [
+</span></span><span style="display:flex;"><span>        <span style="color:#98c379">&#34;[An empty Certificate Revocation List in PEM format]&#34;</span>
+</span></span><span style="display:flex;"><span>    ],
+</span></span><span style="display:flex;"><span>    <span style="color:#e06c75">&#34;key&#34;</span>: <span style="color:#98c379">&#34;[some base64 data]&#34;</span>
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>Semantically, this response provides a RSA2048 certificate and key, plus bootstrapping chain and CRL. If you interact with your printer through Bambu Studio after this request is made, and then run the previous python script to check which certs your printer currently trusts, you will find that the first cert returned in the <code>cert</code> field here is trusted by the printer.</p>
+<p>So it stands to reason that the <code>key</code> field contains the associated RSA2048 private key used to do the message signing, but of course it appears to be encrypted.</p>
+<h3 id="analyzing-the-ciphertexts">
+  Analyzing the Ciphertexts
+  <a class="heading-link" href="#analyzing-the-ciphertexts">
+    <i class="fa-solid fa-link" aria-hidden="true" title="Link to heading"></i>
+    <span class="sr-only">Link to heading</span>
+  </a>
+</h3>
+<p>As expected based on the old leaked code, the aes256 request parameter value is 256 bytes long (2048 bits), consistent with encryption under the server&rsquo;s public key. That way only the Bambu server can decrypt it, using a private key that never leaves the server. That&rsquo;s a pretty standard way of sending a shared key to another party without exposing it to eavesdroppers, the plugin just needs to have the server&rsquo;s public key embedded in it.</p>
+<p>Now, what&rsquo;s in the response <code>key</code> ciphertext? If you capture several of these messages and compare them, you&rsquo;ll find that they actually have some visible structure. The first 28 bytes appear random, but then there&rsquo;s always the same 4 bytes next: <code>A0 02 00 00</code>. If you read this as a little-endian 4-byte integer, it decodes to decimal 672. 672 is exactly the number of bytes remaining in the binary blob, so this 4-byte chunk is a length value.</p>
+<p>What about the 28-byte header? Well, <a href="https://en.wikipedia.org/wiki/Galois/Counter_Mode"  class="external-link" target="_blank" rel="noopener">AES256-GCM</a> typically requires a 12-byte Nonce (similar to an IV) for encryption and decryption. And the encryption process also generates a 16-byte tag that can be used to verify the ciphertext is valid before attempting to decrypt it. 12+16=28, which would explain the header.</p>
+<p>What about the ciphertext itself? The bytes appear to be uniform random, as expected. But the length is somewhat telling. A RSA2048 private key in a standard DER encoding takes up roughly 1200 bytes, almost double the 672-byte ciphertext length. It could be compressed, but that adds additional complexity that you typically want to avoid when the decryption has to be done by a heavily-obfuscated VM core.</p>
+<p>There are a few different standard algorithms that you can use to perform the RSA signing process. One of them is based on the <a href="https://en.wikipedia.org/wiki/RSA_cryptosystem#Using_the_Chinese_remainder_algorithm"  class="external-link" target="_blank" rel="noopener">Chinese Remainder Theorem</a>. I won&rsquo;t discuss how that works, but the import part is that the algorithm uses 5 different values related to the RSA private key, and (for a RSA2048 key) each of those values is 128 bytes in size. 128 x 5 = 640, just 32-bytes shy of the 672 ciphertext block.</p>
+<p>AES-GCM is a length-preserving cipher, so there&rsquo;s definitely another 32 bytes of data unaccounted for (if it is indeed the CRT values). This could be explained by some combination of headers, trailers, field delimiters, length prefixes, content hashes, magic bytes, or some custom nonsense. My guess is it&rsquo;s either an integrity hash of the plaintext or a certificate identifier.</p>
+<p>Finally, what role does the app-id play in all this? If the plugin is using the same process as the old leaked Bambu Connect code, it&rsquo;s an AES-GCM encrypted blob that contains the cert <code>CN</code> (<code>GLOF3813734089-xxxxxxxxxxxx</code>), concatenated with a secret fixed 16-character hex string. That plaintext would have length 27 + 16 =  43 bytes. Add the 12-byte nonce and the 16-byte tag and you get 71 bytes. Exactly the size of the app-id after Base64-URL decoding it. This just serves to prevent you from generating your own request to the server with your own AES key, since you need to know that secret 16-character hex string.</p>
+<h3 id="asking-nicely">
+  Asking Nicely
+  <a class="heading-link" href="#asking-nicely">
+    <i class="fa-solid fa-link" aria-hidden="true" title="Link to heading"></i>
+    <span class="sr-only">Link to heading</span>
+  </a>
+</h3>
+<p>Assuming the cryptography on this side of the request hasn&rsquo;t changed (and everything we can observe black-box points to it being the same), then in theory you could generate your own requests to ask the server to give you the private key, which it would encrypt with whatever 32-byte key you put in the aes256 parameter. But to do so you would first need to know what that secret 16-character hex string is for the target key. And that secret is likely locked away pretty tight inside the plugin obfuscation. Guessing it through brute-force isn&rsquo;t an option; assuming it&rsquo;s actually random, that&rsquo;s 16^16 = 18 quintillion possible values to get through. You would have to send 3 billion network requests every second for 100 years to have a 50% chance of guessing it.</p>
+<p>That said, while the request data looks identical, the <em>response</em> returned by the server has changed a bit. It&rsquo;s no longer Nonce||Ciphertext||Tag, it&rsquo;s Header||Length||Ciphertext, where Header is likely Nonce||Tag. This appears to be fundamentally the same cryptographic response, just rearranged a bit. So there&rsquo;s nothing that obviously indicates the decryption process has changed, but there&rsquo;s always the possibility that Bambu added some additional obfuscation steps in there somewhere.</p>
+<h2 id="finding-the-cracks">
+  Finding the Cracks
+  <a class="heading-link" href="#finding-the-cracks">
+    <i class="fa-solid fa-link" aria-hidden="true" title="Link to heading"></i>
+    <span class="sr-only">Link to heading</span>
+  </a>
+</h2>
+<p>On the whole, this looks like a pretty strong cryptographic scheme from the outside. There&rsquo;s no way to extract the private key from network traffic, or generate your own requests, assuming they used standard library implementations for all the crypto operations and an actually-random 16-char hex secret.</p>
+<p>But what about the plugin itself? That&rsquo;s where their &ldquo;security&rdquo; model starts to break down. In fact, they even acknowledge this as a known limitation in their <a href="https://cdn1.bambulab.com/trust-center/file/bambulab-security-whitepaper-en.pdf"  class="external-link" target="_blank" rel="noopener">whitepaper</a> at the end of section 3.1.2:</p>
+<blockquote>
+<p>We are well aware that even assets protected by virtual machines are not 100% secure against experienced attackers &hellip; we use virtual machine protection as a key component to significantly raise the attack barrier, which in turn reduces the risk of being compromised.</p>
+</blockquote>
+<p>The other sections for different obfuscation techniques similarly acknowledge that their various &ldquo;security through obscurity&rdquo; (my words, not theirs) efforts merely &ldquo;reduce the risk&rdquo; of compromise (their words), and that skilled people can break through all that to access the protected assets.</p>
+<p>So where exactly would the weaknesses be in this scheme, assuming my analysis is correct? Based on that paper and what can be observed in network traffic, that plugin is likely designed to protect key material, primarily the private key that signs printer commands. As an extension of that goal, it must also necessarily protect the linchpins of the cert API request: the ephemeral AES session key, and the secret 16-character hex string.</p>
+<p>An RSA private key is much bigger than an AES256 key, so I suspect they keep that encrypted server response sitting in memory and do just-in-time decryption of the private key every time it&rsquo;s used; that would minimize the time it&rsquo;s exposed in memory, and is consistent with the &ldquo;decrypted only when needed&rdquo; language in section 3.1.5.</p>
+<p>If I was one of those sufficiently skilled and motivated people, here&rsquo;s where I would go looking for key material, roughly in order of priority:</p>
+<h3 id="decryption-time">
+  Decryption Time
+  <a class="heading-link" href="#decryption-time">
+    <i class="fa-solid fa-link" aria-hidden="true" title="Link to heading"></i>
+    <span class="sr-only">Link to heading</span>
+  </a>
+</h3>
+<p>If you manage to identify and hook into the decryption routine, you can just let the plugin do all the de-obfuscation for you. It has to properly decrypt the private key from the server response at some point, and you might be able to dump it right as it finishes the decryption.</p>
+<h3 id="signature-time">
+  Signature Time
+  <a class="heading-link" href="#signature-time">
+    <i class="fa-solid fa-link" aria-hidden="true" title="Link to heading"></i>
+    <span class="sr-only">Link to heading</span>
+  </a>
+</h3>
+<p>Every time Bambu Studio sends a privileged command to a printer, the network plugin has to sign it. If you identify and hook that signing operation right when it uses the private key, you&rsquo;d get it directly.</p>
+<h3 id="aes256-parameter">
+  aes256 Parameter
+  <a class="heading-link" href="#aes256-parameter">
+    <i class="fa-solid fa-link" aria-hidden="true" title="Link to heading"></i>
+    <span class="sr-only">Link to heading</span>
+  </a>
+</h3>
+<p>The client encrypts the session AES key using the server&rsquo;s public key. If you can identify where this encryption happens, you can grab the plaintext key right before it gets encrypted.</p>
+<p>This not only lets you decrypt the private key in the server response (which you&rsquo;d have to also capture from network traffic at the same time), but also probably lets you decrypt the app-id field and get the secret hex-string. Then you could generate your own requests to the server with whatever AES key you want and easily decrypt the response.</p>
+<h3 id="app-id-value">
+  app-id Value
+  <a class="heading-link" href="#app-id-value">
+    <i class="fa-solid fa-link" aria-hidden="true" title="Link to heading"></i>
+    <span class="sr-only">Link to heading</span>
+  </a>
+</h3>
+<p>The secret hex string for the key is either hardcoded into the plugin, or derived from the certificate CN at runtime. Either way, if you extracted that (either statically or by dumping it at runtime), you could try to generate a request to the server using your own AES key. If the scheme hasn&rsquo;t changed since the Bambu Connect leak, you get a response and decrypt the private key. But if it has changed, you hit a dead-end and have to go back and try the aes256 parameter approach to figure out what the new request format is.</p>
+<h3 id="aes-session-key">
+  AES Session Key
+  <a class="heading-link" href="#aes-session-key">
+    <i class="fa-solid fa-link" aria-hidden="true" title="Link to heading"></i>
+    <span class="sr-only">Link to heading</span>
+  </a>
+</h3>
+<p>The network plugin generates this once at startup, and then uses it a few times: to generate the aes256 parameter, to encrypt the app-id value, and to decrypt the server response (possibly multiple times). If you dump it at any of these times, you can decrypt the captured server response and get the private key.</p>
+<h3 id="server-public-key">
+  Server Public Key
+  <a class="heading-link" href="#server-public-key">
+    <i class="fa-solid fa-link" aria-hidden="true" title="Link to heading"></i>
+    <span class="sr-only">Link to heading</span>
+  </a>
+</h3>
+<p>The network plugin encrypts the AES session key using the public RSA key contained in a hardcoded certificate. If you could trick the plugin into using a different RSA key for that step, you could easily decrypt the AES key from the network traffic. Then decrypt the captured server response.</p>
+<h3 id="static-analysis">
+  Static Analysis
+  <a class="heading-link" href="#static-analysis">
+    <i class="fa-solid fa-link" aria-hidden="true" title="Link to heading"></i>
+    <span class="sr-only">Link to heading</span>
+  </a>
+</h3>
+<p>Regardless of what obfuscation methods the plugin uses, at the end of the day it still has to do everything in x86 assembly (or amd64 or ARM64 or whatever). With enough dedication and patience you could always do a full static analysis of the raw plugin bytes and extract the key embedded in it. But I suspect that&rsquo;s the kind of effort typically reserved for a PhD thesis; I wouldn&rsquo;t bother with it.</p>
+<hr>
+<h2 id="signing-messages">
+  Signing Messages
+  <a class="heading-link" href="#signing-messages">
+    <i class="fa-solid fa-link" aria-hidden="true" title="Link to heading"></i>
+    <span class="sr-only">Link to heading</span>
+  </a>
+</h2>
+<p>If you did get access to the private key, how would you actually use it? The basic approach has already been documented <a href="https://github.com/ClusterM/open-bamboo-networking/blob/f4e3eb8ba7339fa73f99076e1ff343811f8a68f5/NETWORK_PLUGIN.md"  class="external-link" target="_blank" rel="noopener">briefly here</a> and in <a href="https://github.com/schwarztim/bambu-mcp/blob/3675ac0ef75f4a24e2b1624e5b63bbbfcd03b25a/docs/mqtt-protocol.md"  class="external-link" target="_blank" rel="noopener">some more detail here</a> (Ctrl+F for RSA_SHA256):</p>
+<div class="highlight"><pre tabindex="0" style="color:#abb2bf;background-color:#282c34;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-json" data-lang="json"><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>  <span style="color:#e06c75">&#34;header&#34;</span>: {
+</span></span><span style="display:flex;"><span>    <span style="color:#e06c75">&#34;cert_id&#34;</span>:     <span style="color:#98c379">&#34;&lt;cert_serial&gt;CN=&lt;issuer_CN&gt;&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#e06c75">&#34;payload_len&#34;</span>: <span style="color:#d19a66">1234</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#e06c75">&#34;sign_alg&#34;</span>:    <span style="color:#98c379">&#34;RSA_SHA256&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#e06c75">&#34;sign_string&#34;</span>: <span style="color:#98c379">&#34;&lt;base64_signature&gt;&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#e06c75">&#34;sign_ver&#34;</span>:    <span style="color:#98c379">&#34;v1.0&#34;</span>
+</span></span><span style="display:flex;"><span>  },
+</span></span><span style="display:flex;"><span>  <span style="color:#e06c75">&#34;print&#34;</span>: { … }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>But after analyzing the network traffic for the current Bambu Studio and network plugin, I noticed some important steps were missing. If you power-cycle your printer and then run the Python script (near the top of this post) to see what certs it trust, it won&rsquo;t return any. Each app has to &ldquo;bootstrap&rdquo; its own cert before the printer will accept it. This is accomplished using the <code>app_cert_install</code> command published on <code>device/&lt;serial&gt;/request</code> MQTT topic:</p>
+<div class="highlight"><pre tabindex="0" style="color:#abb2bf;background-color:#282c34;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-json" data-lang="json"><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    <span style="color:#e06c75">&#34;security&#34;</span>: {
+</span></span><span style="display:flex;"><span>        <span style="color:#e06c75">&#34;app_cert&#34;</span>: <span style="color:#98c379">&#34;&lt;full 3-cert PEM chain&gt;&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#e06c75">&#34;command&#34;</span>: <span style="color:#98c379">&#34;app_cert_install&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#e06c75">&#34;crl&#34;</span>: <span style="color:#98c379">&#34;&lt;CRL PEM&gt;&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#e06c75">&#34;sequence_id&#34;</span>: <span style="color:#98c379">&#34;&lt;digits&gt;&#34;</span>
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><ul>
+<li><code>app_cert</code> is just a copy of the <code>cert</code> field from the cert API response; it contains this app&rsquo;s cert chain, including the leaf cert corresponding to the private key.</li>
+<li><code>crl</code> is similarly just the copied <code>crl</code> data from the same server response</li>
+<li><code>sequence_id</code> is whatever you want, just has to increment with each subsequent request you send.</li>
+</ul>
+<p>Sending that command (assuming all the contents validate correctly) causes the printer to trust that leaf cert for signing. If things don&rsquo;t validate correctly the printer will publish an error code on the response topic. Since this request doesn&rsquo;t have to be signed, you can publish this message yourself to your printer using the data from an intercepted cert API response, then use the provided Python script to verify that it was accepted by your printer.</p>
+<h2 id="the-crl-catch">
+  The CRL Catch
+  <a class="heading-link" href="#the-crl-catch">
+    <i class="fa-solid fa-link" aria-hidden="true" title="Link to heading"></i>
+    <span class="sr-only">Link to heading</span>
+  </a>
+</h2>
+<p>The cert for the private key is good for ~1.5 years (may vary by cert and circumstances), so in theory if you extracted it you could send all the 3rd-party signed messages you wanted for a long time before you had to go back and extract an updated key+cert. Unfortunately, the CRL returned by the server is currently only good for 1 month. And it&rsquo;s signed by a key that only exists on Bambu servers, so generating your own is a non-starter.</p>
+<p>But&hellip; the printer doesn&rsquo;t actually check the expiration on the CRL! You can send an expired one and it&rsquo;s happy to accept it. Which seems almost too good to be true; why would Bambu even bother spending resources making the servers return these every time someone starts Bambu Studio, and make the printers require them, if we can just replay old ones? If a key gets leaked and Bambu starts adding it to CRL responses, what good does that do if we can just send over an old empty CRL at the start of our 3rd-party session?</p>
+<p>I suspect the answer is that the printers cache non-empty CRL revocations in volatile memory just like they cache trusted certs. You don&rsquo;t have to send this bootstrap command before every request, but all of Bambu&rsquo;s applications do so when they initiate a connection to your printer (rather than checking to see if it was already bootstraped). So if you&rsquo;re trying to use a publicly-leaked key to sign 3rd-party commands to send to your non-dev-mode printer, it&rsquo;s still going to get a fresh CRL any time an Internet-connected Bambu application talks to it. And if I&rsquo;m correct, that will immediately lock out your 3rd-party code again.</p>
+<p>Which is exactly what Bambu is trying to accomplish. They don&rsquo;t care about accepting expired CRLs because security isn&rsquo;t their real goal here; forcing you to choose between native cloud features and 3rd-party control is their real goal.</p>
+<h2 id="practical-security-implications">
+  Practical Security Implications
+  <a class="heading-link" href="#practical-security-implications">
+    <i class="fa-solid fa-link" aria-hidden="true" title="Link to heading"></i>
+    <span class="sr-only">Link to heading</span>
+  </a>
+</h2>
+<p>Security is clearly not Bambu&rsquo;s actual goal here. So what attack vectors are they leaving open by building this 3rd-party lockout solution instead of an actual security solution? Turns out, not much, because the printer security scheme was already pretty solid before these changes.</p>
+<h3 id="the-access-code-gate">
+  The Access Code Gate
+  <a class="heading-link" href="#the-access-code-gate">
+    <i class="fa-solid fa-link" aria-hidden="true" title="Link to heading"></i>
+    <span class="sr-only">Link to heading</span>
+  </a>
+</h3>
+<p>You could completely rip out the new MQTT signing requirement and the security model for the local network would barely change, because you still have to have the printer&rsquo;s current Access Code to talk to the printer at all. MQTT has authentication built into it, and Bambu printers have been using it for years. The access code is the password for that authentication.</p>
+<p>Bambu tries to make a big deal about users&rsquo; &ldquo;network security&rdquo; being hard for most users to control, with potential for bad actors to be on the network. That&rsquo;s a completely legitimate concern, especially for printers on company networks. But the existing Access Code authentication implementation <strong>already addresses that very well.</strong> A random 8-digit code has 100,000,000 possible values. At 1 request a second (conservative) it would take 3 years to test every code. Now, I suspect you <em>might</em> be able to squeeze 10 responses per second out of a printer, which brings that down to about 4 months to guess all codes for one printer.  Which is admittedly a bit more practical for an attacker who is absolutely determined to mess with your printer.</p>
+<p>But newer firmware and/or printer models add letters into that code. Assuming a properly random selection process, case-insensitivity, and dropping the ambiguous 0/O pair, that&rsquo;s 34^8 = 1,785,793,904,896 possible combinations. Almost 18,000 times more. That 4-month hacker stretch goal becomes a 6,000 year impossible task. Bambu&rsquo;s &ldquo;security&rdquo; changes are adding absolutely no security enhancements to this threat model.</p>
+<p>To be fair, this model <em>might</em> add some security for commands sent through the cloud, rather than directly to the printer over the local network. Bambu <a href="https://wiki.bambulab.com/en/security-incidents-cloud-traffic"  class="external-link" target="_blank" rel="noopener">implies</a> that they&rsquo;ve had issues with malicious commands being sent through their cloud before, and requiring signing for that route might make those attacks harder. But I didn&rsquo;t look very closely at the cloud route for printer commands, and this argument still reeks of wanting to avoid putting in the work to properly sanitize and validate input server-side. But even if they do think this is valid approach for that, it provides no reason to block 3rd-party commands sent over the local network.</p>
+<h3 id="the-real-hacker-threat">
+  The Real Hacker Threat
+  <a class="heading-link" href="#the-real-hacker-threat">
+    <i class="fa-solid fa-link" aria-hidden="true" title="Link to heading"></i>
+    <span class="sr-only">Link to heading</span>
+  </a>
+</h3>
+<p>What happens if <a href="https://en.wikipedia.org/wiki/Advanced_persistent_threat"  class="external-link" target="_blank" rel="noopener">a top-tier hacker</a> decides they want to send malicious commands to someone&rsquo;s printer? These are the &ldquo;skilled&rdquo; people that Bambu mentions in their whitepaper. These kinds of people <a href="https://www.wired.com/2015/11/heres-a-spy-firms-price-list-for-secret-hacker-techniques/"  class="external-link" target="_blank" rel="noopener">buy and sells exploits for millions of dollars</a>. For these &ldquo;skilled&rdquo; people, extracting the private key from an obfuscated program is probably a relaxing downtime activity compared to their normal hacking efforts. I can almost guarantee that some of all of those private keys have already been extracted by some of those kinds of people, because good hackers love hacking things just to prove they can.</p>
+<p>So while I maintain that a properly-implemented access code scheme is perfectly acceptable security against local network intrusions, remember that no matter what security Bambu claims it is adding with these changes, those protections (by their own admission) are not going to do anything to stop the most dangerous attackers- the ones who might actually have some motivation to cause physical harm or destruction against specific targets, rather than just wanting to steal your bank password or install crypto miners.</p>
+<h2 id="profit-over-principles">
+  Profit Over Principles
+  <a class="heading-link" href="#profit-over-principles">
+    <i class="fa-solid fa-link" aria-hidden="true" title="Link to heading"></i>
+    <span class="sr-only">Link to heading</span>
+  </a>
+</h2>
+<p>In summary, Bambu made a bunch of changes that have every appearance of being intentionally designed to do nothing more than lock out 3rd-party access, while throwing around flimsy security arguments to justify them. Their own whitepaper boasts about the security-through-obscurity mechanisms they built to reduce the risk of a vague &ldquo;compromise.&rdquo; They even had the audacity to include a line encouraging 3rd-party developers who are interested in a partnership with this new scheme to contact them (end of section 2.3.4), apparently with no real intention of actually partnering; OrcaSlicer tried and got <a href="https://groups.google.com/g/3d-printing-tips--tricks/c/TLduxaz4aJQ/m/_7raNRrREQAJ"  class="external-link" target="_blank" rel="noopener">told to use Bambu Connect</a> like everyone else. Have you tried using Bambu Connect? I did once, just to see. It sucks.</p>
+<p>But hey, at least Bambu&rsquo;s cloud servers, already sitting safely behind Cloudflare, maybe aren&rsquo;t getting getting hit with DDoS attempts anymore.</p>
+<h2 id="solutions">
+  Solutions
+  <a class="heading-link" href="#solutions">
+    <i class="fa-solid fa-link" aria-hidden="true" title="Link to heading"></i>
+    <span class="sr-only">Link to heading</span>
+  </a>
+</h2>
+<p>So what could Bambu do to fix all this nonsense, properly enhance security, and make all their users happy at the same time? Here are a few of my ideas:</p>
+<h3 id="restore-local-control">
+  Restore Local Control
+  <a class="heading-link" href="#restore-local-control">
+    <i class="fa-solid fa-link" aria-hidden="true" title="Link to heading"></i>
+    <span class="sr-only">Link to heading</span>
+  </a>
+</h3>
+<p>Bambu doesn&rsquo;t want to pay to service 3rd-party requests through their cloud? Fine. Keep all the signing requirements in place for the cloud MQTT broker, but drop it for the local MQTT server hosted by the printer. Or at least make it a toggle button option, similar to Dev Mode. Then everyone can go back to using OrcaSlicer locally while still having the option to use Bambu Handy when needed.</p>
+<p>That makes 99% of power users happy, and the remaining 1% <em>might</em> be satisfied enough with using <a href="https://tailscale.com/blog/bambuddy-bambu-lab-3d-printer-access"  class="external-link" target="_blank" rel="noopener">TailScale</a> to send remote print jobs via OrcaSlicer that they will no longer feel motivated to rip that private key out of the network plugin.</p>
+<h3 id="user-managed-certs">
+  User-Managed Certs
+  <a class="heading-link" href="#user-managed-certs">
+    <i class="fa-solid fa-link" aria-hidden="true" title="Link to heading"></i>
+    <span class="sr-only">Link to heading</span>
+  </a>
+</h3>
+<p>Add an option in the printer screen to enable user-controlled certs. Include whatever security warning Bambu wants, just like Dev Mode. Users add/change the cert from the USB or SD card, just like offline firmware updates. The printer then trusts messages signed with either this cert or the official ones pushed via the bootstrap process. Turn the toggle off and the cert gets wiped.</p>
+<p>If Bambu insists on pretending like the signing requirement adds meaningful security, then this is the obvious way to merge that security with secure local 3rd-party software control.</p>
+<p>If Bambu wanted to make this <em>really</em> secure (insofar as they claim their new model adds security), they could let users push a custom CA to the printer, which would work just like the BBL CA one that is presumably embedded in firmware. Then users could give each 3rd-party app its own cert+key signed under that CA, and use the exact same bootstrap process to register it with the printer.</p>
+
+      </div>
+
+
+      <footer>
+        
+
+
+        
+        
+        
+        
+        
+        
+        
+      </footer>
+    </article>
+
+    
+  </section>
+
+    </div>
+
+    <footer class="footer">
+  <section class="container">
+    ©
+    
+    2026
+     Bambuzled 
+    ·
+    
+    Powered by <a href="https://gohugo.io/" target="_blank" rel="noopener">Hugo</a> & <a href="https://github.com/luizdepra/hugo-coder/" target="_blank" rel="noopener">Coder</a>.
+    
+  </section>
+</footer>
+
+  </main>
+
+  
+
+  
+  
+  <script src="/js/coder.min.6ae284be93d2d19dad1f02b0039508d9aab3180a12a06dcc71b0b0ef7825a317.js" integrity="sha256-auKEvpPS0Z2tHwKwA5UI2aqzGAoSoG3McbCw73gloxc="></script>
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+</body>
+
+</html>

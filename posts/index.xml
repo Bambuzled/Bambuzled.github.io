@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+	<channel>
+		<title>Posts on Bambuzled</title>
+		<link>https://bambuzled.github.io/posts/</link>
+		<description>Recent content in Posts on Bambuzled</description>
+		<generator>Hugo</generator>
+		<language>en</language>
+		
+		
+		
+		
+			<lastBuildDate>Mon, 30 Jun 2025 18:30:00 +0000</lastBuildDate>
+		
+			<atom:link href="https://bambuzled.github.io/posts/index.xml" rel="self" type="application/rss+xml" />
+			<item>
+				<title>Deep Dive: Bambu&#39;s Authorization Control Scheme</title>
+				<link>https://bambuzled.github.io/posts/bambu-auth-control/</link>
+				<pubDate>Mon, 30 Jun 2025 18:30:00 +0000</pubDate>
+				<guid>https://bambuzled.github.io/posts/bambu-auth-control/</guid>
+				<description>&lt;p&gt;This post describes what Bambu has implemented in their Authorization Control scheme, with an emphasis on the cryptographic system involved. Cryptography is what ultimately defines what you can and cannot do with hardware and software you have access to, and there is a lot of wiggle room here to achieve 3rd-party interoperability if you can break through Bambu&amp;rsquo;s attempts to obscure their software.&lt;/p&gt;&#xA;&lt;h2 id=&#34;forward&#34;&gt;&#xA;  Forward&#xA;  &lt;a class=&#34;heading-link&#34; href=&#34;#forward&#34;&gt;&#xA;    &lt;i class=&#34;fa-solid fa-link&#34; aria-hidden=&#34;true&#34; title=&#34;Link to heading&#34;&gt;&lt;/i&gt;&#xA;    &lt;span class=&#34;sr-only&#34;&gt;Link to heading&lt;/span&gt;&#xA;  &lt;/a&gt;&#xA;&lt;/h2&gt;&#xA;&lt;p&gt;I&amp;rsquo;m intentionally avoiding a detailed description of HOW I observed most of this since Bambu seems to be in the mood to threaten &lt;a href=&#34;https://www.reddit.com/r/3Dprinting/comments/1t3psxr/louis_rossman_talks_about_bambu_labs_sending/&#34;  class=&#34;external-link&#34; target=&#34;_blank&#34; rel=&#34;noopener&#34;&gt;legally-dubious lawsuits&lt;/a&gt; recently for just USING their software in a way they don&amp;rsquo;t like. Besides, if I did then they might decide to go change things to make analysis harder in future versions.&lt;/p&gt;</description>
+			</item>
+	</channel>
+</rss>
